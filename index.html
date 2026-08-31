@@ -146,28 +146,28 @@ const steps = [
   },
   {
     name: "Bloom",
-    lever: "up",
+    lever: "down",
     duration: 30,
     amountLabel: "Add 75mL of hot water",
-    instructions: "Make sure the lever is up.",
+    instructions: "Make sure the lever is down.",
     waitingLabel: "Bloom In Progress...",
     beepCount: 3
   },
   {
     name: "Brew",
-    lever: "down",
+    lever: "up",
     duration: 180,
     amountLabel: "Add hot water to 360mL",
-    instructions: "Make sure the lever is down.",
+    instructions: "Make sure the lever is up.",
     waitingLabel: "Brewing...",
     beepCount: 15
   },
   {
     name: "Drain",
-    lever: "up",
+    lever: "down",
     duration: 75,
     amountLabel: null,
-    instructions: "Move the lever to the up position.",
+    instructions: "Move the lever to the down position.",
     waitingLabel: "Draining...",
     beepCount: 3
   }
@@ -203,6 +203,7 @@ function beep(count){
   count = count || 3;
   try{
     if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended'){ audioCtx.resume(); }
     const now = audioCtx.currentTime;
     for(let i=0;i<count;i++){
       const osc = audioCtx.createOscillator();
@@ -273,7 +274,22 @@ function renderStep(){
   }
 }
 
+function unlockAudio(){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended'){ audioCtx.resume(); }
+    // Play a near-silent blip to fully unlock audio on iOS within this tap.
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0.0001;
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.01);
+  }catch(e){ /* audio unavailable, ignore */ }
+}
+
 function startTimer(){
+  unlockAudio();
   const step = steps[current];
   const btn = document.getElementById('nextBtn');
   if(btn){
