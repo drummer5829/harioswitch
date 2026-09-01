@@ -115,6 +115,13 @@
   .next-btn:active.ready{ transform: scale(.97); }
   .next-btn:disabled{ opacity:.55; }
 
+  /* Disable all transitions momentarily during rotation/resize to prevent
+     visual jitter as the layout reflows on iOS. */
+  html.no-transitions *{
+    transition: none !important;
+    animation: none !important;
+  }
+
   .reset-link{
     margin-top:16px; background:none; border:none;
     color: var(--ink-muted); font-size:13px; text-decoration:underline;
@@ -362,6 +369,19 @@ document.addEventListener('visibilitychange', async ()=>{
     requestWakeLock();
   }
 });
+
+/* Prevent visual jitter during device rotation by briefly disabling all
+   CSS transitions/animations while the layout is reflowing. */
+let orientationSettleTimer = null;
+function freezeTransitionsDuringResize(){
+  document.documentElement.classList.add('no-transitions');
+  clearTimeout(orientationSettleTimer);
+  orientationSettleTimer = setTimeout(()=>{
+    document.documentElement.classList.remove('no-transitions');
+  }, 400);
+}
+window.addEventListener('orientationchange', freezeTransitionsDuringResize);
+window.addEventListener('resize', freezeTransitionsDuringResize);
 
 /* init */
 renderStep();
