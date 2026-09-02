@@ -291,9 +291,10 @@ function playFileBeep(count){
 
 function beep(count){
   count = count || 3;
-  // Fire both playback paths; whichever iOS actually permits will be heard.
+  // Use only the Web Audio tone path. Firing this alongside the audio-file
+  // path caused iOS to only commit to the first overlapping sound and
+  // silently drop the rest of the repeats.
   playToneBeep(count);
-  playFileBeep(count);
 }
 
 function vibrate(){
