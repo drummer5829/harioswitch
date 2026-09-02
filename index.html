@@ -179,7 +179,7 @@ const steps = [
     duration: 30,
     amountLabel: "Add 75mL of hot water",
     instructions: "Make sure the lever is down.",
-    waitingLabel: "Bloom In Progress...",
+    waitingLabel: "Blooming",
     beepCount: 3,
     doneLabel: "Move Lever Up"
   },
@@ -198,7 +198,7 @@ const steps = [
     lever: "down",
     duration: 75,
     amountLabel: null,
-    instructions: "Move the lever to the down position.",
+    instructions: "Make sure the lever is down.",
     waitingLabel: "Draining...",
     beepCount: 3,
     autoStart: true
@@ -211,6 +211,8 @@ let timerHandle = null;
 let ready = false; // true once a timed step hits 0
 let wakeLock = null;
 let audioUnlocked = false;
+let audioCtx = null;
+let keepAliveStarted = false;
 const beepAudio = new Audio(BEEP_SRC);
 beepAudio.preload = 'auto';
 
@@ -233,14 +235,51 @@ function renderProgress(){
   }).join('');
 }
 
-function beep(count){
+/* Keep a near-silent oscillator running for the entire session once
+   unlocked. On iOS, standalone home-screen apps can silently revoke
+   audio permission after a period of inactivity (e.g. during a 3-minute
+   brew timer) even after an earlier user-gesture unlock. Keeping the
+   AudioContext continuously "busy" prevents that from happening. */
+function startKeepAlive(){
+  if(keepAliveStarted) return;
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended'){ audioCtx.resume(); }
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0.00001; // effectively silent, but non-zero
+    osc.frequency.value = 20;
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start();
+    keepAliveStarted = true;
+  }catch(e){ /* audio unavailable, ignore */ }
+}
+
+function playToneBeep(count){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended'){ audioCtx.resume(); }
+    const now = audioCtx.currentTime;
+    for(let i=0;i<count;i++){
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, now + i*0.35);
+      gain.gain.linearRampToValueAtTime(0.9, now + i*0.35 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + i*0.35 + 0.3);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(now + i*0.35);
+      osc.stop(now + i*0.35 + 0.32);
+    }
+  }catch(e){ /* audio unavailable, ignore */ }
+}
+
+function playFileBeep(count){
   count = count || 3;
   for(let i=0;i<count;i++){
     setTimeout(()=>{
       try{
-        // Reuse the same element that was unlocked by the user's tap.
-        // Cloning creates a fresh, un-unlocked element on iOS, which is
-        // why alerts previously went silent after the first tap.
         beepAudio.pause();
         beepAudio.currentTime = 0;
         const p = beepAudio.play();
@@ -248,6 +287,13 @@ function beep(count){
       }catch(e){ /* audio unavailable, ignore */ }
     }, i*350);
   }
+}
+
+function beep(count){
+  count = count || 3;
+  // Fire both playback paths; whichever iOS actually permits will be heard.
+  playToneBeep(count);
+  playFileBeep(count);
 }
 
 function vibrate(){
@@ -308,6 +354,7 @@ function renderStep(){
 }
 
 function unlockAudio(){
+  startKeepAlive();
   try{
     // Play + immediately pause the base element within this tap to unlock
     // audio playback on iOS for the rest of the session.
@@ -411,6 +458,17 @@ function freezeTransitionsDuringResize(){
 }
 window.addEventListener('orientationchange', freezeTransitionsDuringResize);
 window.addEventListener('resize', freezeTransitionsDuringResize);
+
+/* Safety net: unlock audio on the very first tap anywhere on the page,
+   not just the Start button, in case the app is opened and audio needs
+   to be ready sooner. */
+function firstTapUnlock(){
+  unlockAudio();
+  document.removeEventListener('touchstart', firstTapUnlock);
+  document.removeEventListener('pointerdown', firstTapUnlock);
+}
+document.addEventListener('touchstart', firstTapUnlock, { once: true });
+document.addEventListener('pointerdown', firstTapUnlock, { once: true });
 
 /* init */
 renderStep();
