@@ -255,22 +255,39 @@ function startKeepAlive(){
   }catch(e){ /* audio unavailable, ignore */ }
 }
 
+const BEEP_INTERVAL_MS = 420; // wider gap so tones can't overlap into a blur
+
 function playToneBeep(count){
   try{
     if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if(audioCtx.state === 'suspended'){ audioCtx.resume(); }
+
+    // Route through a limiter so any timing jitter/overlap on iOS can't
+    // sum into harsh clipping.
+    const limiter = audioCtx.createDynamicsCompressor();
+    limiter.threshold.value = -12;
+    limiter.knee.value = 6;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.002;
+    limiter.release.value = 0.08;
+    limiter.connect(audioCtx.destination);
+
     const now = audioCtx.currentTime;
+    const gapS = BEEP_INTERVAL_MS / 1000;
+    const toneLenS = 0.18; // fully finished well before the next tone starts
+
     for(let i=0;i<count;i++){
+      const start = now + i*gapS;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.type = 'sine';
       osc.frequency.value = 880;
-      gain.gain.setValueAtTime(0.0001, now + i*0.35);
-      gain.gain.linearRampToValueAtTime(0.9, now + i*0.35 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + i*0.35 + 0.3);
-      osc.connect(gain).connect(audioCtx.destination);
-      osc.start(now + i*0.35);
-      osc.stop(now + i*0.35 + 0.32);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.linearRampToValueAtTime(0.55, start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + toneLenS);
+      osc.connect(gain).connect(limiter);
+      osc.start(start);
+      osc.stop(start + toneLenS + 0.02);
     }
   }catch(e){ /* audio unavailable, ignore */ }
 }
@@ -285,7 +302,7 @@ function playFileBeep(count){
         const p = beepAudio.play();
         if(p && p.catch) p.catch(()=>{ /* playback blocked, ignore */ });
       }catch(e){ /* audio unavailable, ignore */ }
-    }, i*350);
+    }, i*BEEP_INTERVAL_MS);
   }
 }
 
@@ -309,7 +326,7 @@ function flashTimer(count){
     setTimeout(()=>{
       disp.classList.add('flash');
       setTimeout(()=>disp.classList.remove('flash'), 180);
-    }, i*350);
+    }, i*BEEP_INTERVAL_MS);
   }
 }
 
